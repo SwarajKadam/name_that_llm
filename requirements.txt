@@ -1,0 +1,15 @@
+# Core data and EDA stack
+numpy>=1.26,<3
+pandas>=2.2,<4
+matplotlib>=3.8,<4
+
+# Parquet submission files
+pyarrow>=15,<24
+
+# Competition download utility
+kagglehub>=0.3,<1
+
+# Interactive execution of notebooks/01_train_eda.py in VS Code or Jupyter
+ipykernel>=6.29,<8
+jupyterlab>=4.2,<5
+

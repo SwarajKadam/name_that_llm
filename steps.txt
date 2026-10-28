@@ -1,0 +1,180 @@
+1. Establish the evaluation contract
+Before modeling, confirm:
+- Official metric: likely accuracy, but verify.
+- Whether external pretrained models/data are allowed.
+- Whether test-time clustering or other transductive methods are allowed.
+- GPU, runtime, internet, and submission constraints.
+- Exact 18 class names and class frequencies.
+A useful structural clue is that 2,699 ≈ 150 prompts × 18 models. It appears each prompt may have one response from nearly every model. This should drive both validation and advanced post-processing.
+2. Build leakage-safe validation
+Never use ordinary random or stratified row splits. Responses to the same prompt share topic, vocabulary, structure, and semantic content, causing optimistic validation scores.
+Use:
+StratifiedGroupKFold(
+    n_splits=5,
+    shuffle=True,
+    random_state=42,
+)
+- Target: model
+- Group: prompt_id
+- Keep all responses to a prompt in one fold.
+- Save out-of-fold probabilities for every experiment.
+- Report mean score, fold standard deviation, per-class recall, and confusion matrix.
+Also create a few fixed holdout schemes:
+- Five-fold grouped CV for model selection.
+- Repeated grouped CV for reliable ensemble weights.
+- Domain-style holdouts based on prompt/topic clusters to estimate robustness to major topic shifts.
+3. Perform targeted EDA
+Study signals that can plausibly generalize across prompts:
+- Class balance and missing model–prompt combinations.
+- Word, character, sentence, and paragraph lengths.
+- Markdown, headings, lists, LaTeX, code blocks, Unicode, em dashes, semicolons, quotes, and parentheses.
+- Contractions, transition phrases, hedging, disclaimers, conclusions, and rhetorical questions.
+- Vocabulary richness and repetition.
+- Sentence-length distribution and punctuation patterns.
+- Whether specific models consistently use openings such as “Certainly,” or structured endings.
+- Duplicate and near-duplicate passages.
+- Prompt-topic clusters and class performance within each topic.
+Do not conclude that a feature is useful until it improves grouped CV.
+4. Establish strong sparse baselines
+For this dataset size, sparse linear models may be surprisingly competitive.
+Baseline A: character fingerprints
+- Character TF-IDF with analyzer="char" or "char_wb"
+- N-grams around 2–6 or 3–7
+- min_df and max_features tuned through grouped CV
+- Logistic regression or linear SVM
+Character features capture punctuation, capitalization, whitespace, spelling, formatting, and phrase fragments.
+Baseline B: word and phrase fingerprints
+- Word TF-IDF with 1–3 grams
+- Word-boundary patterns
+- Sublinear term frequency
+- Logistic regression or linear SVM
+Baseline C: stylometry
+Create explicit features such as:
+- Length and sentence statistics
+- Punctuation frequencies
+- Markdown/LaTeX/code indicators
+- Function-word frequencies
+- POS-tag distributions, if runtime permits
+- Lexical diversity and repetition
+- Readability and casing features
+Train LightGBM, CatBoost, logistic regression, or calibrated linear SVM on these features.
+First ensemble
+Blend out-of-fold probabilities from:
+- Character TF-IDF
+- Word TF-IDF
+- Stylometric model
+This is the first dependable submission and the benchmark every more expensive model must beat.
+5. Add semantic representations carefully
+Semantic models can overfit prompt content rather than author style.
+Test:
+- Frozen sentence/document embeddings plus logistic regression.
+- Embeddings of the original passage.
+- Embeddings after removing equations, code, or topic-heavy terms.
+- A combination of semantic embeddings and stylometric features.
+If frozen embeddings perform well under random splits but poorly under grouped splits, they are mostly learning prompt semantics and should receive little ensemble weight.
+6. Fine-tune a transformer
+Start with a capable encoder classifier such as DeBERTa-v3, ModernBERT, or another competition-compatible encoder—not an unnecessarily huge generative model.
+Recommended setup:
+- Maximum length based on tokenizer EDA, probably 256–512 tokens.
+- Five grouped folds.
+- Two to five epochs with early stopping.
+- Low learning rate and weight decay.
+- Multiple seeds only after the architecture proves useful.
+- Class weighting only if meaningful imbalance exists.
+- Save logits and probabilities, not only predictions.
+Useful experiments:
+- Standard cross-entropy.
+- Label smoothing.
+- Focal loss if hard classes dominate errors.
+- R-Drop or adversarial weight perturbation if supported.
+- Multi-sample dropout.
+- Hierarchical prediction: lab first, then model within lab.
+The hierarchical approach is promising because models from one lab may share fingerprints. Test both:
+1. One direct 18-class classifier.
+2. Six-lab classifier plus lab-specific model classifiers.
+3. Direct probabilities adjusted by lab-level probabilities.
+7. Exploit the prompt structure without leakage
+The dataset structure creates a potentially powerful second-stage approach.
+If each hidden prompt also has approximately one response from every model:
+1. Generate semantic embeddings for all test passages.
+2. Cluster passages by underlying prompt.
+3. Within each inferred prompt cluster, construct an 18×18 score matrix.
+4. Use the Hungarian algorithm to assign each model at most once per cluster.
+This converts independent classification into a constrained assignment problem.
+However, test.csv does not provide prompt_id, so clustering quality is critical. Validate the complete procedure by:
+- Removing prompt_id from validation folds.
+- Clustering validation texts using embeddings.
+- Comparing recovered clusters with true prompt groups.
+- Measuring final attribution accuracy after assignment.
+- Testing robustness when clusters have missing or extra passages.
+Only use this if competition rules permit transductive test processing and grouped CV shows a clear gain.
+8. Diagnose model-family confusion
+Use the out-of-fold confusion matrix to determine whether mistakes are:
+- Mostly within the same lab.
+- Between related model sizes or generations.
+- Concentrated on technical or creative prompts.
+- Driven by short passages.
+- Associated with particular formatting styles.
+Then build specialist classifiers only where evidence supports them. For example, a second classifier distinguishing two frequently confused Qwen variants may outperform broad global changes.
+9. Ensemble using out-of-fold predictions
+Likely final ensemble:
+- Character TF-IDF linear model
+- Word TF-IDF linear model
+- Stylometric classifier
+- Frozen-embedding classifier
+- Two or more transformer folds/seeds
+- Optional hierarchical classifier
+- Optional prompt-constrained assignment
+Optimize non-negative blend weights against out-of-fold predictions. Avoid manually tuning weights against one lucky fold.
+Track:
+- Overall grouped-CV score
+- Score variance across folds
+- Per-class recall
+- Calibration
+- Diversity of errors between ensemble members
+A slightly weaker model can be valuable if its errors differ from those of the strongest model.
+10. Build a reproducible pipeline
+I would organize the project as:
+name_that_llm/
+├── data/
+├── notebooks/
+│   └── 01_eda.ipynb
+├── src/
+│   ├── data.py
+│   ├── splits.py
+│   ├── features.py
+│   ├── train_sparse.py
+│   ├── train_transformer.py
+│   ├── evaluate.py
+│   ├── ensemble.py
+│   └── submit.py
+├── configs/
+├── artifacts/
+│   ├── splits/
+│   ├── oof/
+│   ├── models/
+│   └── reports/
+├── tests/
+├── requirements.txt
+├── README.md
+└── AGENTS.md
+Every experiment should record:
+- Git commit
+- Split version
+- Features and hyperparameters
+- Fold scores
+- Out-of-fold predictions
+- Test predictions
+- Runtime and seed
+Recommended execution order
+1. Verify metric, rules, and dataset integrity.
+2. Freeze grouped folds.
+3. Run EDA.
+4. Train character and word TF-IDF baselines.
+5. Add stylometric features and blend.
+6. Train frozen-embedding classifiers.
+7. Fine-tune one encoder under the same folds.
+8. Analyze confusion and test hierarchical classification.
+9. Validate prompt clustering and constrained assignment.
+10. Optimize the final OOF ensemble.
+11. Retrain fold models and generate a schema-validated Parquet submission.

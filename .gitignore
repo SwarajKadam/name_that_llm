@@ -1,0 +1,52 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments and local configuration
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+
+# Notebook state
+.ipynb_checkpoints/
+
+# Downloaded competition data and Kaggle credentials
+data/*
+!data/.gitkeep
+kaggle.json
+
+# Generated outputs, trained models, and experiment logs
+artifacts/
+outputs/
+models/
+checkpoints/
+runs/
+wandb/
+*.joblib
+*.pkl
+*.pickle
+*.pt
+*.pth
+*.ckpt
+
+# Packaging and build outputs
+build/
+dist/
+*.egg-info/
+
+# Editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
